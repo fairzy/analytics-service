@@ -1,28 +1,17 @@
 # /etc/nginx/sites-available/analytics.picturebookpedia.cn
-# 证书路径由 certbot 自动填入，下面是 certbot --nginx 处理后的样子。
+#
+# 首次部署时只有 :80 段（certbot 还没申请证书）。跑
+# `certbot --nginx -d analytics.picturebookpedia.cn` 后，certbot 会自动
+# 在下面追加 :443 server 段、挂上证书、并把 :80 改成 301 → :443。
+# 之后这份文件就长得像 https://ssl-config.mozilla.org 的推荐配置。
 
 server {
     listen 80;
     listen [::]:80;
     server_name analytics.picturebookpedia.cn;
-    # certbot 会把 80 → 443 的跳转补进来
-    return 301 https://$host$request_uri;
-}
 
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name analytics.picturebookpedia.cn;
-
-    ssl_certificate     /etc/letsencrypt/live/analytics.picturebookpedia.cn/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/analytics.picturebookpedia.cn/privkey.pem;
-    include             /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
-
-    # 客户端事件请求通常很小，给个宽松上限即可
     client_max_body_size 1m;
 
-    # 访问日志（可留可不留，量大时可以 access_log off;）
     access_log /var/log/nginx/analytics.access.log;
     error_log  /var/log/nginx/analytics.error.log;
 
