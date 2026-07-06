@@ -1,14 +1,32 @@
-# /etc/nginx/sites-available/analytics.picturebookpedia.cn
+# /usr/local/nginx/conf/sites-available/analytics-service.conf
 #
-# 首次部署时只有 :80 段（certbot 还没申请证书）。跑
-# `certbot --nginx -d analytics.picturebookpedia.cn` 后，certbot 会自动
-# 在下面追加 :443 server 段、挂上证书、并把 :80 改成 301 → :443。
-# 之后这份文件就长得像 https://ssl-config.mozilla.org 的推荐配置。
+# ⚠️ 这台 CVM 上 nginx.conf 只 include 了
+#   /usr/local/nginx/conf/sites-available/*.conf
+# 所以文件必须放这个目录、必须以 .conf 结尾，才会生效。
+#
+# 首次部署时用「阶段 A：仅 :80」的最简 conf 上线，等 certbot webroot 拿到
+# 证书后，再替换成下面这份完整版（:80 acme + 301 + :443 SSL）。
+# 具体见 DEPLOY.md。
 
 server {
     listen 80;
-    listen [::]:80;
     server_name analytics.picturebookpedia.cn;
+
+    # letsencrypt renew 走 webroot
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name analytics.picturebookpedia.cn;
+
+    ssl_certificate     /etc/letsencrypt/live/analytics.picturebookpedia.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/analytics.picturebookpedia.cn/privkey.pem;
 
     client_max_body_size 1m;
 
