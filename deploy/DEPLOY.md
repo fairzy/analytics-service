@@ -31,8 +31,9 @@ ssh -i "/Users/fairzyfan/Documents/bank/腾讯云登录私钥mac_mini_login.pem"
 sudo mkdir -p /opt/analytics-service
 sudo chown ubuntu:ubuntu /opt/analytics-service
 cd /opt/analytics-service
-git clone git@github.com:<user>/analytics_service.git .
-# 或用 https 拉,只要 CVM 上配好 GitHub 访问
+git clone https://github.com/fairzy/analytics-service.git .
+# 私有仓 https 拉取时会提示输入 GitHub 用户 + PAT;
+# 或先在 CVM 上 gh auth login,或 ssh key 配好后改用 git@github.com:fairzy/analytics-service.git
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
