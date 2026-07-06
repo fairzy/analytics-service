@@ -69,6 +69,31 @@ bash scripts/smoke.sh
 
 见 `deploy/DEPLOY.md`。生产上跑 gunicorn + systemd，Nginx 反代 443 → 8320。
 
+## SSH 到部署机（CVM `43.138.150.181`）
+
+这台 CVM 同时跑着 dinasaur_pedia 后端 / live.ai 后端 / picturebookpedia-api / logto / appadmin / analytics-service，SSH 姿势统一。
+
+### 直连（部署 / 排错）
+
+```bash
+ssh -i "/Users/fairzyfan/Documents/bank/腾讯云登录私钥mac_mini_login.pem" \
+    ubuntu@43.138.150.181
+```
+
+### 端口转发到本地（访问不对公网暴露的管理台）
+
+```bash
+# Logto 管理台 http://localhost:3002/console
+ssh -i "/Users/fairzyfan/Documents/bank/腾讯云登录私钥mac_mini_login.pem" \
+    -L 3002:localhost:3002 -N ubuntu@43.138.150.181
+
+# analytics 本地（调 gunicorn 直连时用）
+ssh -i "/Users/fairzyfan/Documents/bank/腾讯云登录私钥mac_mini_login.pem" \
+    -L 8320:localhost:8320 -N ubuntu@43.138.150.181
+```
+
+保持终端不关闭，浏览器/curl 访问对应 localhost 端口。
+
 ## 数据库演进
 
 - 单表 `events`，索引覆盖 `(app_name, created_at)` / `(app_name, device_id, created_at)` / `(app_name, event, created_at)`
