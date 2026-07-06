@@ -1,0 +1,17 @@
+[Unit]
+Description=Analytics service (multi-app events collector)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/analytics-service
+EnvironmentFile=/etc/analytics-service.env
+ExecStart=/opt/analytics-service/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8320 --access-logfile - --error-logfile - app:app
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
