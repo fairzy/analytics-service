@@ -66,58 +66,32 @@ iOS App (EarthTrip)     ─┘                                                  
 
 ## iOS SDK（AnalyticsKit）
 
-Swift Package 在本仓 `ios/`，各 App **不要再复制** `AnalyticsClient.swift`。
-
-### 接入
-
-**XcodeGen `project.yml`：**
-
-```yaml
-packages:
-  AnalyticsKit:
-    path: ../analytics-service/ios   # 或 git URL + from version
-dependencies:
-  - package: AnalyticsKit
-    product: AnalyticsKit
-```
-
-**启动时 install（须在任何 track / Keychain purge 之前）：**
-
-```swift
-import AnalyticsKit
-
-AnalyticsClient.install(AnalyticsConfig(
-    appName: "liveai",                          // dinopedia / animal-friends / earthtrip
-    payloadKeyHex: "<64 hex 或 nil=明文>",       // 与 ANALYTICS_PAYLOAD_KEY 一致
-    keychainService: "ai.talent.liveai.analytics",
-    keychainAccount: "ai.talent.liveai.analyticsClientId", // 可选
-    legacyInstallIdDefaultsKey: "…"             // 可选，迁移旧 UserDefaults
-))
-
-// 打点
-await AnalyticsClient.shared.setUserId(sub)
-await AnalyticsClient.shared.track("app_open", props: ["cold": .bool(true)])
-await AnalyticsClient.shared.flush()            // 进后台时建议调用
-```
-
-**Auth 冷启动 purge 全部 Keychain 时**，保留匿名 id：
-
-```swift
-let id = AnalyticsClient.readKeychainClientId()
-// … SecItemDelete 全部 GenericPassword …
-if let id { AnalyticsClient.writeKeychainClientId(id) }
-```
-
-### 能力
+Swift Package 在本仓 **`ios/`**，各 App **不要再复制** `AnalyticsClient.swift`。
 
 | 能力 | 说明 |
 |---|---|
 | clientId | Keychain UUID，重启/卸载重装尽量不变 |
 | 批量 | 默认 5s 窗口，失败静默 |
-| 加密 | 配置 `payloadKeyHex` 后 AES-256-GCM 信封 |
+| 加密 | 配置 `payloadKeyHex` 后 AES-256-GCM；`nil` 则明文 |
 | props | `AnalyticsValue`：string / int / double / bool |
 
-参考实现：`live.ai` 的 `LiveAIAnalytics.swift`。
+**完整接入说明（依赖 / install 时机 / Keychain purge / 分 App 清单 / FAQ）：**  
+→ **[ios/README.md](ios/README.md)**
+
+最短示例：
+
+```swift
+import AnalyticsKit
+
+AnalyticsClient.install(AnalyticsConfig(
+    appName: "liveai",
+    payloadKeyHex: "<与 ANALYTICS_PAYLOAD_KEY 相同的 64 hex，或 nil>",
+    keychainService: "ai.talent.liveai.analytics"
+))
+await AnalyticsClient.shared.track("app_open", props: ["cold": .bool(true)])
+```
+
+参考实现：`live.ai` 的 `LiveAI/Sources/Engine/LiveAIAnalytics.swift`。
 
 ## 本地开发
 
