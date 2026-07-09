@@ -5,10 +5,17 @@
   GET  /api/events/stats   — X-API-Key 保护，DAU / 事件分布 / 版本分布
 
 设计取舍见 README.md。SQLite 单表宽结构，`app_name` 字段区分 App。
+
+track 支持两种 body：
+  1) 明文 JSON（历史 DinoPedia 等兼容）
+  2) AES-256-GCM 信封：{ v, app_name, enc:"aes-256-gcm", data:<base64 nonce|ct|tag> }
+     密钥来自环境变量 ANALYTICS_PAYLOAD_KEY（64 hex = 32 bytes）
 """
 from __future__ import annotations
 
+import base64
 import json
+import os
 import sqlite3
 import time
 from collections import defaultdict, deque
@@ -33,6 +40,9 @@ _rate_lock = Lock()
 MAX_EVENTS_PER_REQUEST = 100
 MAX_PROPS_BYTES = 2048
 
+# AES-GCM: CryptoKit combined = 12-byte nonce + ciphertext + 16-byte tag
+_GCM_NONCE_LEN = 12
+
 
 def _db_path() -> str:
     return current_app.config["EVENTS_DB_PATH"]
@@ -40,6 +50,67 @@ def _db_path() -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _payload_key() -> bytes | None:
+    """32-byte AES key from ANALYTICS_PAYLOAD_KEY (hex). Empty → encryption disabled."""
+    raw = (current_app.config.get("PAYLOAD_KEY") or os.environ.get("ANALYTICS_PAYLOAD_KEY") or "").strip()
+    if not raw:
+        return None
+    try:
+        key = bytes.fromhex(raw)
+    except ValueError:
+        return None
+    return key if len(key) == 32 else None
+
+
+def _decrypt_envelope(body: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """Decrypt aes-256-gcm envelope → plain track body. Returns (body, error_code)."""
+    enc = body.get("enc")
+    data_b64 = body.get("data")
+    if enc != "aes-256-gcm" or not data_b64:
+        return None, "invalid_envelope"
+
+    key = _payload_key()
+    if key is None:
+        return None, "encryption_not_configured"
+
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        raw = base64.b64decode(data_b64, validate=True)
+        if len(raw) <= _GCM_NONCE_LEN + 16:
+            return None, "decrypt_failed"
+        nonce, ct = raw[:_GCM_NONCE_LEN], raw[_GCM_NONCE_LEN:]
+        plain = AESGCM(key).decrypt(nonce, ct, None)
+        parsed = json.loads(plain.decode("utf-8"))
+        if not isinstance(parsed, dict):
+            return None, "decrypt_failed"
+        # 信封外的 app_name 可与明文一致；不一致时以明文为准，但要求都在白名单
+        return parsed, None
+    except Exception:
+        return None, "decrypt_failed"
+
+
+def _resolve_track_body() -> tuple[dict[str, Any] | None, Any]:
+    """Parse request JSON; decrypt if envelope. Returns (body, error_response_or_None)."""
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return None, (jsonify(error="invalid_json"), 400)
+
+    if body.get("enc") == "aes-256-gcm":
+        plain, err = _decrypt_envelope(body)
+        if err == "encryption_not_configured":
+            return None, (jsonify(error=err), 503)
+        if err or plain is None:
+            return None, (jsonify(error=err or "decrypt_failed"), 400)
+        # 信封外 app_name 必须存在且在白名单（便于网关日志）；与明文冲突时以明文为准
+        outer_app = body.get("app_name")
+        if outer_app and outer_app not in ALLOWED_APPS:
+            return None, (jsonify(error="unknown_app"), 400)
+        return plain, None
+
+    return body, None
 
 
 def _ensure_db() -> None:
@@ -82,7 +153,11 @@ def _rate_check(device_id: str) -> bool:
 
 @bp.post("/track")
 def track():
-    body = request.get_json(silent=True) or {}
+    body, err_resp = _resolve_track_body()
+    if err_resp is not None:
+        return err_resp
+    assert body is not None
+
     app_name = body.get("app_name")
     if app_name not in ALLOWED_APPS:
         return jsonify(error="unknown_app"), 400

@@ -41,10 +41,15 @@ python3 -m venv .venv
 
 ```bash
 KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-echo "记好: $KEY"    # ⚠️ 抄进 1Password，appadmin 集成 stats 时用
+echo "记好 API KEY: $KEY"    # ⚠️ 抄进 1Password，appadmin 集成 stats 时用
+
+# Live.AI 等加密客户端用的 AES-256 key（64 hex）。必须与 iOS AnalyticsClient.payloadKeyHex 一致。
+# 若线上已有约定密钥，直接填该 hex，不要重新生成。
+PAYLOAD_KEY=e8c2a91f4b7d6035a1e9f2c84d6b0e37a5f1c8d29b4e7063f0a8d1c5e9b27f4a
 
 sudo tee /etc/analytics-service.env >/dev/null <<EOF
 ANALYTICS_API_KEY=$KEY
+ANALYTICS_PAYLOAD_KEY=$PAYLOAD_KEY
 EVENTS_DB_PATH=/opt/analytics-service/data/events.sqlite3
 EOF
 sudo chmod 640 /etc/analytics-service.env

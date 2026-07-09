@@ -37,6 +37,35 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/events/track" 
 [ "$code" = "400" ] || { echo "expected 400, got $code"; exit 1; }
 echo "OK: 400"
 
+if [ -n "${ANALYTICS_PAYLOAD_KEY:-}" ]; then
+  step "POST /api/events/track（AES-GCM 信封）"
+  python3 - <<'PY' | curl -sS -X POST "$BASE/api/events/track" \
+    -H 'Content-Type: application/json' \
+    -d @- | tee /dev/stderr | grep -q '"accepted":1'
+import base64, json, os
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+key = bytes.fromhex(os.environ["ANALYTICS_PAYLOAD_KEY"])
+plain = json.dumps({
+    "app_name": "liveai",
+    "device_id": "smoke-enc-device-001",
+    "app_version": "9.9.9",
+    "os_version": "iOS 18.0",
+    "locale": "zh-CN",
+    "events": [{"event": "app_open", "props": {"enc": True}}],
+}).encode()
+aes = AESGCM(key)
+nonce = os.urandom(12)
+ct = aes.encrypt(nonce, plain, None)
+print(json.dumps({
+    "v": 1,
+    "app_name": "liveai",
+    "enc": "aes-256-gcm",
+    "data": base64.b64encode(nonce + ct).decode(),
+}))
+PY
+  echo "OK: encrypted track"
+fi
+
 step "GET /api/events/stats（无 key 场景）"
 if [ -z "$KEY" ]; then
   echo "  (未配置 ANALYTICS_API_KEY，服务端应允许直接访问)"

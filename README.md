@@ -27,7 +27,7 @@ iOS App (EarthTrip)     ─┘                                                  
 
 无鉴权，SDK 直发。单请求最多 100 条事件；每条 props 上限 2KB；每 device_id 每 60 秒 60 条速率限制。
 
-请求体：
+#### 明文请求体（兼容旧客户端）
 
 ```json
 {
@@ -43,11 +43,81 @@ iOS App (EarthTrip)     ─┘                                                  
 }
 ```
 
+#### 加密信封（Live.AI 等新客户端）
+
+环境变量 `ANALYTICS_PAYLOAD_KEY` = 64 hex（32-byte AES key）。客户端用 **AES-256-GCM** 加密明文 JSON，再包装：
+
+```json
+{
+  "v": 1,
+  "app_name": "liveai",
+  "enc": "aes-256-gcm",
+  "data": "<base64(nonce||ciphertext||tag)>"
+}
+```
+
+`data` 为 CryptoKit `AES.GCM.SealedBox.combined`（12 字节 nonce + ciphertext + 16 字节 tag）。解密后的明文结构与上面的明文 body 相同。未配置密钥时加密请求返回 `503 encryption_not_configured`。
+
 响应：`{ "ok": true, "accepted": 1, "dropped": 0 }`
 
 ### `GET /api/events/stats?app=dinopedia&days=30`
 
 `X-API-Key` 保护。返回 DAU / 事件分布 / 版本分布，日界按北京时间（UTC+8）切。
+
+## iOS SDK（AnalyticsKit）
+
+Swift Package 在本仓 `ios/`，各 App **不要再复制** `AnalyticsClient.swift`。
+
+### 接入
+
+**XcodeGen `project.yml`：**
+
+```yaml
+packages:
+  AnalyticsKit:
+    path: ../analytics-service/ios   # 或 git URL + from version
+dependencies:
+  - package: AnalyticsKit
+    product: AnalyticsKit
+```
+
+**启动时 install（须在任何 track / Keychain purge 之前）：**
+
+```swift
+import AnalyticsKit
+
+AnalyticsClient.install(AnalyticsConfig(
+    appName: "liveai",                          // dinopedia / animal-friends / earthtrip
+    payloadKeyHex: "<64 hex 或 nil=明文>",       // 与 ANALYTICS_PAYLOAD_KEY 一致
+    keychainService: "ai.talent.liveai.analytics",
+    keychainAccount: "ai.talent.liveai.analyticsClientId", // 可选
+    legacyInstallIdDefaultsKey: "…"             // 可选，迁移旧 UserDefaults
+))
+
+// 打点
+await AnalyticsClient.shared.setUserId(sub)
+await AnalyticsClient.shared.track("app_open", props: ["cold": .bool(true)])
+await AnalyticsClient.shared.flush()            // 进后台时建议调用
+```
+
+**Auth 冷启动 purge 全部 Keychain 时**，保留匿名 id：
+
+```swift
+let id = AnalyticsClient.readKeychainClientId()
+// … SecItemDelete 全部 GenericPassword …
+if let id { AnalyticsClient.writeKeychainClientId(id) }
+```
+
+### 能力
+
+| 能力 | 说明 |
+|---|---|
+| clientId | Keychain UUID，重启/卸载重装尽量不变 |
+| 批量 | 默认 5s 窗口，失败静默 |
+| 加密 | 配置 `payloadKeyHex` 后 AES-256-GCM 信封 |
+| props | `AnalyticsValue`：string / int / double / bool |
+
+参考实现：`live.ai` 的 `LiveAIAnalytics.swift`。
 
 ## 本地开发
 

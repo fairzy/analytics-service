@@ -18,7 +18,7 @@
 | 数据迁移 | 无 — 服务器上原本没有 events.sqlite3 数据 |
 | 仓库托管 | GitHub 私有仓 `github.com/fairzy/analytics-service` |
 | appadmin 后台集成 | **暂不做**，先让端点跑起来 |
-| iOS SDK 是否抽 Swift Package | 不抽，各 App 直接复制 `AnalyticsClient.swift` 并改 `app_name` + endpoint |
+| iOS SDK 是否抽 Swift Package | **已抽**：`ios/AnalyticsKit` SPM，各 App `AnalyticsClient.install(config)` |
 
 ## 三阶段计划 & 完成状态
 
