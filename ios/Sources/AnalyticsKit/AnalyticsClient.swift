@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import CryptoKit
 import Security
+import Network
 import os
 
 /// 轻量埋点客户端：直连 analytics-service，失败静默，不影响主流程。
@@ -18,6 +19,8 @@ import os
 ///
 /// - **clientId**：Keychain 持久 UUID（重启/卸载重装尽量不变）
 /// - **加密**：配置了 `payloadKeyHex` 则 AES-256-GCM 信封，否则明文 JSON
+/// - **中国大陆网络权限**：启动后系统弹「允许无线数据」期间请求会失败；
+///   失败事件会放回 buffer，并用 `NWPathMonitor` 在恢复联网后自动 flush。
 public actor AnalyticsClient {
     public static let shared = AnalyticsClient()
 
@@ -25,6 +28,15 @@ public actor AnalyticsClient {
     private var flushTask: Task<Void, Never>?
     private var userId: String?
     private var cachedClientId: String?
+
+    /// 是否正在发送，避免并发 flush 打乱 requeue 顺序。
+    private var isFlushing = false
+    /// 连续失败次数，用于退避；成功后清零。
+    private var consecutiveFailures = 0
+    /// 当前是否可达（乐观初始 true，首个 path 回调校正）。
+    private var isOnline = true
+    private var networkMonitorStarted = false
+    private var pathMonitor: NWPathMonitor?
 
     private let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -71,6 +83,8 @@ public actor AnalyticsClient {
             log.warning("Analytics track ignored — not installed. Call AnalyticsClient.install first.")
             return
         }
+        ensureNetworkMonitor()
+
         let name = event.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let config = AnalyticsRuntime.requireConfig()
@@ -91,11 +105,17 @@ public actor AnalyticsClient {
     }
 
     public func flush() async {
-        guard !buffer.isEmpty else { return }
-        let config = AnalyticsRuntime.requireConfig()
+        guard AnalyticsRuntime.config != nil else { return }
+        ensureNetworkMonitor()
+        guard !buffer.isEmpty, !isFlushing else { return }
 
+        isFlushing = true
+        defer { isFlushing = false }
+
+        let config = AnalyticsRuntime.requireConfig()
         let count = min(config.maxBatchSize, buffer.count)
         let events = Array(buffer.prefix(count))
+        // 先取出再发：成功则丢弃，失败放回队头，避免中国区网络权限窗口期丢事件。
         buffer.removeFirst(count)
 
         struct Body: Encodable {
@@ -140,13 +160,19 @@ public actor AnalyticsClient {
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 let text = String(data: data, encoding: .utf8) ?? "<binary>"
                 log.warning("Analytics track HTTP \(http.statusCode): \(text.prefix(200), privacy: .public)")
+                requeue(events, config: config)
+                scheduleRetryIfNeeded(config: config)
+                return
+            }
+            // 成功
+            consecutiveFailures = 0
+            if !buffer.isEmpty {
+                scheduleFlush(delay: config.flushDelayNanos)
             }
         } catch {
             log.debug("Analytics track failed silently: \(String(describing: error), privacy: .public)")
-        }
-
-        if !buffer.isEmpty {
-            scheduleFlush(delay: config.flushDelayNanos)
+            requeue(events, config: config)
+            scheduleRetryIfNeeded(config: config)
         }
     }
 
@@ -249,6 +275,55 @@ public actor AnalyticsClient {
             enc: "aes-256-gcm",
             data: combined.base64EncodedString()
         ))
+    }
+
+    // MARK: - Network recovery (中国大陆「允许无线数据」)
+
+    /// 监听路径变化：用户点允许后 path 由 unsatisfied → satisfied，自动重试 buffer。
+    private func ensureNetworkMonitor() {
+        guard !networkMonitorStarted else { return }
+        networkMonitorStarted = true
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            let online = path.status == .satisfied
+            Task { await self?.handlePathUpdate(online: online) }
+        }
+        monitor.start(queue: DispatchQueue(label: "AnalyticsKit.network"))
+    }
+
+    private func handlePathUpdate(online: Bool) {
+        let recovered = online && !isOnline
+        isOnline = online
+        if recovered {
+            log.info("Analytics network recovered — flushing buffered events")
+            consecutiveFailures = 0
+            Task { await flush() }
+        } else if !online {
+            log.debug("Analytics network unavailable (e.g. awaiting cellular data permission)")
+        }
+    }
+
+    private func requeue(_ events: [PendingEvent], config: AnalyticsConfig) {
+        buffer = events + buffer
+        if buffer.count > config.maxBufferSize {
+            buffer = Array(buffer.suffix(config.maxBufferSize))
+        }
+        consecutiveFailures += 1
+    }
+
+    /// 在线时指数退避重试；离线时等 NWPathMonitor 恢复后再 flush。
+    private func scheduleRetryIfNeeded(config: AnalyticsConfig) {
+        guard isOnline else { return }
+        scheduleFlush(delay: retryDelayNanos(config: config))
+    }
+
+    /// 5s → 10s → 20s → 40s → 60s（封顶）。
+    private func retryDelayNanos(config: AnalyticsConfig) -> UInt64 {
+        let base = max(config.flushDelayNanos, 5_000_000_000)
+        let shift = min(max(consecutiveFailures - 1, 0), 4)
+        let delay = base << shift
+        return min(delay, 60_000_000_000)
     }
 
     // MARK: - Internals

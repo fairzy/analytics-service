@@ -72,6 +72,7 @@ Swift Package 在本仓 **`ios/`**，各 App **不要再复制** `AnalyticsClien
 |---|---|
 | clientId | Keychain UUID，重启/卸载重装尽量不变 |
 | 批量 | 默认 5s 窗口，失败静默 |
+| 离线重试 | flush 失败回队；`NWPathMonitor` 恢复后重发（中国区无线数据权限窗口） |
 | 加密 | 配置 `payloadKeyHex` 后 AES-256-GCM；`nil` 则明文 |
 | props | `AnalyticsValue`：string / int / double / bool |
 

@@ -128,6 +128,18 @@ await AnalyticsClient.shared.track("purchase_success", props: [
 await AnalyticsClient.shared.flush()
 ```
 
+### 中国大陆网络权限弹窗
+
+App 首次启动后，系统可能弹出「是否允许 App 使用无线数据」。用户点「允许」之前所有 HTTPS 都会失败（`NSURLError -1009/-1005` 等）。
+
+SDK 行为：
+
+1. `flush` 失败时把事件**放回 buffer 队头**（不再静默丢弃）
+2. 在线时指数退避重试（约 5s → 10s → … → 60s）
+3. 用 `NWPathMonitor` 捕捉离线→在线跳变，立即再 `flush`
+
+App 侧无需额外处理；仍建议在进后台时调用 `flush()`。
+
 ### `AnalyticsValue`
 
 - `.string` / `.int` / `.double` / `.bool`  
@@ -203,14 +215,20 @@ if let preserved {
 4. 替换原 track 调用为 `AnalyticsKit`  
 5. 若有 Keychain 全清，加 preserve clientId  
 
-### 动物朋友 / EarthTrip
+### 动物朋友
 
 | App | `appName` |
 |---|---|
 | 动物朋友 | `animal-friends` |
-| EarthTrip | `earthtrip` |
 
 步骤同 DinoPedia；`keychainService` 用各自 bundle 前缀。
+
+### EarthTrip / Earthpedia（已接入）
+
+- path 依赖：`myresearchs/GlobeBuildingsDemo/...` → `../../../analytics-service/ios`
+- `appName = "earthtrip"`；加密开启
+- `EarthpediaAnalytics.install()` + `app_open` / `app_active` / 付费 / 反馈
+- 版本 ≥ 1.3.1 起有埋点数据
 
 ---
 
@@ -250,6 +268,7 @@ curl -sS -H "X-API-Key: $ANALYTICS_API_KEY" \
 |---|---|
 | track 无日志 / 不生效 | 未 `install` |
 | 卸载重装 clientId 变了 | Auth purge 未 preserve，或系统清了 Keychain |
+| 启动后一段时间才有事件 | 中国区网络权限弹窗未点允许；SDK 会缓存并在恢复后重发 |
 | HTTP 503 encryption_not_configured | 客户端加密了但服务端未配 `ANALYTICS_PAYLOAD_KEY` |
 | HTTP 400 decrypt_failed | 密钥不一致 |
 | 编译找不到 AnalyticsKit | path 不对；需 `analytics-service` 与 App 仓同级 |

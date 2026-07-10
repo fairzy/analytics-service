@@ -25,7 +25,7 @@ Live.AI 已接入；DinoPedia / 动物朋友 / EarthTrip 待迁到 SPM。
 - ✅ Phase 3 部分 — **Live.AI** 接入 AnalyticsKit + 加密上报  
 - ⏸ DinoPedia 改为 AnalyticsKit（删本地 `AnalyticsClient.swift`）  
 - ⏸ 动物朋友 `appName=animal-friends`  
-- ⏸ EarthTrip `appName=earthtrip`  
+- ✅ EarthTrip `appName=earthtrip`（Earthpedia ≥1.3.1，含中国区网络权限重试）  
 
 ## 生产（CVM `43.138.150.181`）
 
