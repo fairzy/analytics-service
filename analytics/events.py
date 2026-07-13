@@ -2,7 +2,7 @@
 
 端点：
   POST /api/events/track   — 无鉴权，SDK 直发（简单速率限制）
-  GET  /api/events/stats   — X-API-Key 保护，DAU / 事件分布 / 版本分布
+  GET  /api/events/stats   — X-API-Key 保护，DAU / 事件分布（总量 + 按天 Top-N）/ 版本分布
 
 设计取舍见 README.md。SQLite 单表宽结构，`app_name` 字段区分 App。
 
@@ -264,12 +264,33 @@ def stats():
             (*args_since, *app_args),
         ).fetchall()
 
+        daily_rows = conn.execute(
+            f"""SELECT {bj_day} AS date, event, COUNT(*) AS cnt
+                 FROM events
+                WHERE {where}{app_clause}
+                GROUP BY 1, 2 ORDER BY 1""",
+            (*args_since, *app_args),
+        ).fetchall()
+
+    # 事件按天分布：只展开期间总量 Top-N 的事件，长尾并入 "__other__"
+    # （控制 payload 与前端图例规模；event_rows 已按总量降序，前 N 个即 Top-N）
+    TOP_EVENTS_DAILY = 8
+    top_events = {r["event"] for r in event_rows[:TOP_EVENTS_DAILY]}
+    daily_agg: dict[tuple[str, str], int] = {}
+    for r in daily_rows:
+        key = (r["date"], r["event"] if r["event"] in top_events else "__other__")
+        daily_agg[key] = daily_agg.get(key, 0) + r["cnt"]
+
     series = [dict(r) for r in series_rows]
     return jsonify(
         app=app_name,
         days=days,
         series=series,
         event_totals=[{"event": r["event"], "count": r["cnt"]} for r in event_rows],
+        event_daily=[
+            {"date": d, "event": e, "count": c}
+            for (d, e), c in sorted(daily_agg.items())
+        ],
         version_distribution=[{"version": r["version"], "devices": r["devices"]} for r in ver_rows],
         totals={
             "user_dau_avg": round(sum(s["user_dau"] for s in series) / len(series), 1) if series else 0,
