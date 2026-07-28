@@ -12,7 +12,10 @@ let package = Package(
     targets: [
         .target(
             name: "AnalyticsKit",
-            path: "Sources/AnalyticsKit"
+            path: "Sources/AnalyticsKit",
+            resources: [
+                .copy("PrivacyInfo.xcprivacy"),
+            ]
         ),
     ]
 )
