@@ -29,6 +29,9 @@ public actor AnalyticsClient {
     private var userId: String?
     private var cachedClientId: String?
 
+    /// 待发队列是否已从磁盘读回（懒加载，首次 track / flush 时触发）。
+    private var didLoadPersisted = false
+
     /// 是否正在发送，避免并发 flush 打乱 requeue 顺序。
     private var isFlushing = false
     /// 连续失败次数，用于退避；成功后清零。
@@ -46,7 +49,7 @@ public actor AnalyticsClient {
     private let encoder = JSONEncoder()
     private let log = Logger(subsystem: "AnalyticsKit", category: "client")
 
-    private struct PendingEvent: Encodable, Sendable {
+    private struct PendingEvent: Codable, Sendable {
         let event: String
         let ts: String
         let props: [String: AnalyticsValue]?
@@ -84,6 +87,7 @@ public actor AnalyticsClient {
             return
         }
         ensureNetworkMonitor()
+        ensureLoaded()
 
         let name = event.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
@@ -101,12 +105,14 @@ public actor AnalyticsClient {
             ts: iso.string(from: Date()),
             props: props.isEmpty ? nil : props
         ))
+        persist()
         scheduleFlush(delay: config.flushDelayNanos)
     }
 
     public func flush() async {
         guard AnalyticsRuntime.config != nil else { return }
         ensureNetworkMonitor()
+        ensureLoaded()
         guard !buffer.isEmpty, !isFlushing else { return }
 
         isFlushing = true
@@ -164,8 +170,9 @@ public actor AnalyticsClient {
                 scheduleRetryIfNeeded(config: config)
                 return
             }
-            // 成功
+            // 成功：已发出去的不必再留在磁盘上
             consecutiveFailures = 0
+            persist()
             if !buffer.isEmpty {
                 scheduleFlush(delay: config.flushDelayNanos)
             }
@@ -310,6 +317,9 @@ public actor AnalyticsClient {
             buffer = Array(buffer.suffix(config.maxBufferSize))
         }
         consecutiveFailures += 1
+        // 发送失败的事件必须落盘：网络故障期正是最需要留痕的时段，
+        // 只留在内存里的话 App 一退出就全没了。
+        persist()
     }
 
     /// 在线时指数退避重试；离线时等 NWPathMonitor 恢复后再 flush。
@@ -324,6 +334,65 @@ public actor AnalyticsClient {
         let shift = min(max(consecutiveFailures - 1, 0), 4)
         let delay = base << shift
         return min(delay, 60_000_000_000)
+    }
+
+    // MARK: - 待发队列持久化
+    //
+    // 队列只存在内存里，意味着「网络故障时段的事件必然丢失」——而那恰恰是最该留痕的时段。
+    // 2026-08-03 排查一笔 IAP 漏单时吃过这个亏：用户在离线状态下走完了整个购买流程，
+    // paywall_view / purchase_start 全堆在内存队列里，App 一退出就蒸发，
+    // 事后完全无法还原用户路径，只能靠 Apple 的 S2S 通知反推。
+    // 这里把待发队列落盘，下次启动读回来继续补发；服务端以客户端上报的 ts 入库
+    // （另用 created_at 记接收时间），所以补发不会打乱事件时序。
+
+    private var pendingFileURL: URL? {
+        guard let config = AnalyticsRuntime.config else { return nil }
+        let fm = FileManager.default
+        guard let base = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                     appropriateFor: nil, create: true) else { return nil }
+        let dir = base.appendingPathComponent("AnalyticsKit", isDirectory: true)
+        if !fm.fileExists(atPath: dir.path) {
+            guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else {
+                return nil
+            }
+        }
+        return dir.appendingPathComponent("\(config.appName)-pending.json")
+    }
+
+    /// 首次使用时把上次残留的待发事件读回队列（排在新事件之前，保持时序）。
+    private func ensureLoaded() {
+        guard !didLoadPersisted else { return }
+        didLoadPersisted = true
+        guard let url = pendingFileURL,
+              let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode([PendingEvent].self, from: data),
+              !saved.isEmpty else { return }
+        let config = AnalyticsRuntime.requireConfig()
+        buffer = Array((saved + buffer).suffix(config.maxBufferSize))
+        log.info("Analytics restored \(saved.count, privacy: .public) pending events from disk")
+        scheduleFlush(delay: config.flushDelayNanos)
+    }
+
+    /// 原子写入当前待发队列；队列空则删文件，不留垃圾。
+    ///
+    /// 「取出一批准备发送」的那一刻故意不写盘：若进程恰在请求途中被杀，
+    /// 下次启动会重发这批事件——宁可少量重复，也不接受丢失。
+    private func persist() {
+        guard let url = pendingFileURL else { return }
+        guard !buffer.isEmpty else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        guard let data = try? encoder.encode(buffer) else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+            var mutableURL = url
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true   // 埋点队列没有备份价值
+            try? mutableURL.setResourceValues(values)
+        } catch {
+            log.debug("Analytics persist failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: - Internals
