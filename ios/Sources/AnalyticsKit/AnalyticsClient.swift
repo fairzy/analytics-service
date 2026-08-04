@@ -177,6 +177,14 @@ public actor AnalyticsClient {
                 scheduleFlush(delay: config.flushDelayNanos)
             }
         } catch {
+            if Self.isCancellation(error) {
+                // 兜底：scheduleFlush 修好后本不该再出现，但若发送任务因其它原因被取消
+                // （如 App 挂起），放回队头并按正常节奏重试即可，不涨退避。
+                log.debug("Analytics flush cancelled, requeueing without backoff")
+                requeue(events, config: config, countAsFailure: false)
+                scheduleFlush(delay: config.flushDelayNanos)
+                return
+            }
             log.debug("Analytics track failed silently: \(String(describing: error), privacy: .public)")
             requeue(events, config: config)
             scheduleRetryIfNeeded(config: config)
@@ -311,15 +319,25 @@ public actor AnalyticsClient {
         }
     }
 
-    private func requeue(_ events: [PendingEvent], config: AnalyticsConfig) {
+    /// 放回队头。`countAsFailure = false` 用于任务取消这类"非真实失败"，
+    /// 避免把它计进指数退避。
+    private func requeue(_ events: [PendingEvent], config: AnalyticsConfig, countAsFailure: Bool = true) {
         buffer = events + buffer
         if buffer.count > config.maxBufferSize {
             buffer = Array(buffer.suffix(config.maxBufferSize))
         }
-        consecutiveFailures += 1
+        if countAsFailure { consecutiveFailures += 1 }
         // 发送失败的事件必须落盘：网络故障期正是最需要留痕的时段，
         // 只留在内存里的话 App 一退出就全没了。
+        // 取消导致的放回同样要落盘——事件已经回到队列，磁盘就该跟队列一致。
         persist()
+    }
+
+    /// 任务取消（-999 / CancellationError）不是服务端或网络故障，不应触发退避。
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     /// 在线时指数退避重试；离线时等 NWPathMonitor 恢复后再 flush。
@@ -403,12 +421,22 @@ public actor AnalyticsClient {
         return data.count <= maxBytes
     }
 
+    /// 防抖调度：track() 每来一个事件就调一次，新的调度会取消上一个"待触发的定时器"。
+    ///
+    /// 注意 flushTask 只承载 sleep，**不承载 flush 本身**。早先的写法是
+    /// `await self?.flush()` 直接跑在 flushTask 内，于是上一次 flush 已经越过 sleep、
+    /// 正卡在 `URLSession.data(for:)` 上时，新事件触发的 `flushTask?.cancel()` 会把
+    /// 在飞的 HTTP 请求一起掐断，URLSession 抛 -999 cancelled——埋点在自己取消自己。
+    /// 事件虽然会被 requeue，但 requeue 把这次"自作自受"记成真实失败，退避一路涨到 60s。
+    ///
+    /// 这里把发送放进一个独立的非结构化 Task，脱离防抖的取消链；并发由 flush() 内的
+    /// isFlushing 守。
     private func scheduleFlush(delay: UInt64) {
         flushTask?.cancel()
         flushTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: delay)
             if Task.isCancelled { return }
-            await self?.flush()
+            Task { await self?.flush() }
         }
     }
 
