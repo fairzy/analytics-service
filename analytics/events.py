@@ -272,6 +272,15 @@ def stats():
             (*args_since, *app_args),
         ).fetchall()
 
+        # 全时间去重设备数（不受 days 限制；无用户账号体系的 App 用作「总用户数」）
+        all_time_where = "1=1" + app_clause
+        total_devices_row = conn.execute(
+            f"""SELECT COUNT(DISTINCT device_id) AS n
+                 FROM events WHERE {all_time_where}""",
+            app_args,
+        ).fetchone()
+        total_devices = int(total_devices_row["n"] or 0) if total_devices_row else 0
+
     # 事件按天分布：只展开期间总量 Top-N 的事件，长尾并入 "__other__"
     # （控制 payload 与前端图例规模；event_rows 已按总量降序，前 N 个即 Top-N）
     TOP_EVENTS_DAILY = 8
@@ -296,5 +305,6 @@ def stats():
             "user_dau_avg": round(sum(s["user_dau"] for s in series) / len(series), 1) if series else 0,
             "device_dau_avg": round(sum(s["device_dau"] for s in series) / len(series), 1) if series else 0,
             "events": sum(s["events"] for s in series),
+            "total_devices": total_devices,
         },
     )
