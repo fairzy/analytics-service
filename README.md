@@ -77,7 +77,7 @@ Swift Package 在本仓 **`ios/`**，各 App **不要再复制** `AnalyticsClien
 | props | `AnalyticsValue`：string / int / double / bool |
 
 **完整接入说明（依赖 / install 时机 / Keychain purge / 分 App 清单 / FAQ）：**  
-→ **[ios/README.md](ios/README.md)**
+→ **[AnalyticsKit/README.md](AnalyticsKit/README.md)**
 
 最短示例：
 

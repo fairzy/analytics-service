@@ -1,6 +1,6 @@
 # HANDOVER — analytics 服务
 
-> 换电脑后先读本文 + 根 [README.md](README.md) + [ios/README.md](ios/README.md)。
+> 换电脑后先读本文 + 根 [README.md](README.md) + [AnalyticsKit/README.md](AnalyticsKit/README.md)。
 
 ## 现状一句话
 
@@ -52,19 +52,19 @@ sudo systemctl status analytics-service
 | 文档 | 内容 |
 |---|---|
 | [README.md](README.md) | 架构、HTTP 契约、部署入口 |
-| [ios/README.md](ios/README.md) | **AnalyticsKit 接入全文** |
+| [AnalyticsKit/README.md](AnalyticsKit/README.md) | **AnalyticsKit 接入全文** |
 | [deploy/DEPLOY.md](deploy/DEPLOY.md) | CVM 部署步骤 + PAYLOAD_KEY |
 
 ## 下一 App 接入（复制清单）
 
 1. App 仓与 `analytics-service` 同级 clone  
-2. `project.yml` path 依赖 `../analytics-service/ios`，`xcodegen generate`  
+2. `project.yml` path 依赖 `../analytics-service/AnalyticsKit`，`xcodegen generate`  
 3. 写 `XxxAnalytics.install()`（appName / keychain / 可选 payloadKey）  
 4. Auth 冷启动 purge 时 `readKeychainClientId` → purge → `writeKeychainClientId`  
 5. 替换/接上 `track` / `setUserId` / 后台 `flush`  
 6. 跑一遍，curl `stats?app=<name>&days=1` 验收  
 
-细节与 FAQ → [ios/README.md](ios/README.md)。
+细节与 FAQ → [AnalyticsKit/README.md](AnalyticsKit/README.md)。
 
 ## 踩过的坑（摘要）
 

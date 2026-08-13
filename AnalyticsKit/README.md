@@ -21,7 +21,7 @@
 ```yaml
 packages:
   AnalyticsKit:
-    path: ../analytics-service/ios
+    path: ../analytics-service/AnalyticsKit
 
 targets:
   YourApp:
@@ -45,13 +45,13 @@ packages:
     from: "1.0.0"   # 需在仓根或 ios/ 配好 SPM；若 path 在子目录见下文
 ```
 
-> 当前 Package 在子目录 `ios/`。Xcode 用 **Add Local…** 选 `analytics-service/ios`；  
+> 当前 Package 在子目录 `AnalyticsKit/`。Xcode 用 **Add Local…** 选 `analytics-service/AnalyticsKit`；  
 > 远程依赖若 SPM 只认仓根，可把 `Package.swift` 挪到仓根或使用 monorepo 的 path 约定。  
-> **本团队默认**：各 App 本地 path `../analytics-service/ios`。
+> **本团队默认**：各 App 本地 path `../analytics-service/AnalyticsKit`。
 
 ### 纯 Xcode
 
-File → Add Package Dependencies → Add Local → 选本目录 `ios/`。
+File → Add Package Dependencies → Add Local → 选本目录 `AnalyticsKit/`。
 
 ---
 
@@ -225,7 +225,7 @@ if let preserved {
 
 ### EarthTrip / Earthpedia（已接入）
 
-- path 依赖：`myresearchs/GlobeBuildingsDemo/...` → `../../../analytics-service/ios`
+- path 依赖：`myresearchs/GlobeBuildingsDemo/...` → `../../../analytics-service/AnalyticsKit`
 - `appName = "earthtrip"`；加密开启
 - `EarthpediaAnalytics.install()` + `app_open` / `app_active` / 付费 / 反馈
 - 版本 ≥ 1.3.1 起有埋点数据
