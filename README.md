@@ -64,6 +64,10 @@ iOS App (EarthTrip)     ─┘                                                  
 
 `X-API-Key` 保护。返回 DAU / 事件分布 / 版本分布，日界按北京时间（UTC+8）切。
 
+### `GET /api/events/funnel?app=liveai&days=14`
+
+`X-API-Key` 保护。Live.AI 付费页互斥流程树：进入付费页 → 看到 / 没看到 / 旧版未记录商品 → 点了购买 / 没点就走了 → 成功 / 失败 / 取消 / 商品不可用 / 尚无结果。人数按设备去重，兄弟分叉互斥。日界北京时间。
+
 ## iOS SDK（AnalyticsKit）
 
 Swift Package 在本仓 **`ios/`**，各 App **不要再复制** `AnalyticsClient.swift`。
