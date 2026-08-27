@@ -2,6 +2,26 @@
 
 目标：`analytics.picturebookpedia.cn` 上线，gunicorn 监听 `127.0.0.1:8320`，Nginx 反代 443。
 
+## ⚠️ 出仓前先进 git，并按日期打 tag
+
+顺序不能反：**先 commit → 打 annotated tag `server-YYYYMMDD` 并 `git push origin <tag>` → 才 scp / 重启**
+（同一天多次发加 `-2` `-3`）。传上去的必须是**某次 commit 里的内容**（`git show <sha>:path`），
+不是工作区里的文件。
+
+```bash
+git tag -a server-20260827 -m "Deploy: <改了什么/传了哪些文件/怎么验证>"
+git push origin server-20260827
+```
+
+tag 是这次发版的永久名字——回滚、对账、查「生产上跑的到底是哪一版」都靠它。
+
+**这条是吃过亏才加的**：`analytics/paywall_funnel.py` 和 `tests/` 在生产跑了很久却从没提交过，
+机器是唯一副本。下次谁整目录 rsync 一下就静默打掉了，还不报错。
+所以部署前先 `shasum` 比对生产文件与仓库版本，**发现生产有仓库里没有的代码，先同步回仓库再谈部署**。
+
+重启后必须验活：`bash scripts/smoke.sh` 通过 + `/api/events/funnel` 返回 `tree`，
+才算发布成功（`systemctl is-active` 显示 active 不算）。
+
 ## 这台 CVM 的坑（先看再动手）
 
 - **主 nginx 进程**：apt 版 `/usr/sbin/nginx`（systemd `nginx.service` 管理）
