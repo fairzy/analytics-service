@@ -3,6 +3,7 @@
 端点：
   POST /api/events/track   — 无鉴权，SDK 直发（简单速率限制）
   GET  /api/events/stats   — X-API-Key 保护，DAU / 事件分布（总量 + 按天 Top-N）/ 版本分布
+  GET  /api/events/funnel  — X-API-Key 保护，Live.AI 付费页互斥流程树（按设备去重）
 
 设计取舍见 README.md。SQLite 单表宽结构，`app_name` 字段区分 App。
 
@@ -27,6 +28,7 @@ from typing import Any
 from flask import Blueprint, current_app, jsonify, request
 
 from . import require_api_key
+from .paywall_funnel import compute_paywall_funnel
 
 bp = Blueprint("events", __name__)
 
@@ -308,3 +310,22 @@ def stats():
             "total_devices": total_devices,
         },
     )
+
+
+@bp.get("/funnel")
+@require_api_key
+def funnel():
+    """付费页互斥流程树。日界按北京时间 (UTC+8)。目前只有 Live.AI 有这条漏斗。"""
+    app_name = request.args.get("app") or "liveai"
+    if app_name not in ALLOWED_APPS:
+        return jsonify(error="unknown_app"), 400
+    try:
+        days = int(request.args.get("days", 14))
+    except ValueError:
+        return jsonify(error="invalid_days"), 400
+    days = max(1, min(90, days))
+
+    _ensure_db()
+    with sqlite3.connect(_db_path()) as conn:
+        payload = compute_paywall_funnel(conn, app_name, days)
+    return jsonify(payload)

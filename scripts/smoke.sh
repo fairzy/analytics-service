@@ -79,6 +79,10 @@ else
   step "GET /api/events/stats 带 key 应 200"
   curl -sS -H "X-API-Key: $KEY" "$BASE/api/events/stats?app=dinopedia&days=1" \
     | tee /dev/stderr | grep -q '"app":"dinopedia"'
+
+  step "GET /api/events/funnel 带 key 应 200"
+  curl -sS -H "X-API-Key: $KEY" "$BASE/api/events/funnel?app=liveai&days=1" \
+    | tee /dev/stderr | grep -q '"tree"'
 fi
 
 printf '\n\033[1;32m✓ smoke passed\033[0m\n'
