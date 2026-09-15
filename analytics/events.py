@@ -30,7 +30,7 @@ from . import require_api_key
 
 bp = Blueprint("events", __name__)
 
-ALLOWED_APPS = {"dinopedia", "liveai", "animal-friends", "earthtrip"}
+ALLOWED_APPS = {"dinopedia", "liveai", "animal-friends", "earthtrip", "clothai"}
 
 _RATE_WINDOW_S = 60
 _RATE_LIMIT = 60

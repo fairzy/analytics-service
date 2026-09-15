@@ -1,6 +1,6 @@
 # analytics_service
 
-多 App 通用的轻量埋点收集服务。四个 App（DinoPedia / Live.AI / 动物朋友 / EarthTrip）打点到同一个端点，靠 `app_name` 字段区分。
+多 App 通用的轻量埋点收集服务。五个 App（DinoPedia / Live.AI / 动物朋友 / EarthTrip / AI试衣镜）打点到同一个端点，靠 `app_name` 字段区分。
 
 - **域名**：`https://analytics.picturebookpedia.cn`
 - **栈**：Flask + gunicorn + SQLite

@@ -72,7 +72,7 @@ enum YourAppAnalytics {
     static func install() {
         guard !AnalyticsClient.isInstalled else { return }
         AnalyticsClient.install(AnalyticsConfig(
-            appName: "liveai",  // 白名单：dinopedia | liveai | animal-friends | earthtrip
+            appName: "liveai",  // 白名单：dinopedia | liveai | animal-friends | earthtrip | clothai
             // 与生产 /etc/analytics-service.env 的 ANALYTICS_PAYLOAD_KEY 一致；nil = 明文 body
             payloadKeyHex: "…64 hex chars…",
             keychainService: "your.bundle.analytics",       // 按 App 区分
