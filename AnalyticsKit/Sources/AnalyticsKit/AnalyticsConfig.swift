@@ -2,7 +2,7 @@ import Foundation
 
 /// 各 App 接入时差异配置。启动时调用一次 `AnalyticsClient.install(_:)`。
 public struct AnalyticsConfig: Sendable {
-    /// 白名单 app 名：liveai / dinopedia / animal-friends / earthtrip
+    /// 白名单 app 名：liveai / dinopedia / animal-friends / earthtrip / wearai
     public var appName: String
     /// 默认生产埋点端点
     public var trackURL: URL

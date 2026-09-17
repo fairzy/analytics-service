@@ -32,7 +32,7 @@ from .paywall_funnel import compute_paywall_funnel
 
 bp = Blueprint("events", __name__)
 
-ALLOWED_APPS = {"dinopedia", "liveai", "animal-friends", "earthtrip", "clothai"}
+ALLOWED_APPS = {"dinopedia", "liveai", "animal-friends", "earthtrip", "clothai", "wearai"}
 
 _RATE_WINDOW_S = 60
 _RATE_LIMIT = 60
